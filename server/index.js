@@ -3,11 +3,14 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-require('dotenv').config();
+const dotenv = require('dotenv');
 
 const userRoutes = require('./routes/users');
 const errorHandler = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -31,7 +34,7 @@ app.use(cors({
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -41,10 +44,11 @@ app.use((req, res, next) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
+  res.status(200).json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
@@ -53,38 +57,42 @@ app.use('/api/users', userRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
-  res.status(404).json({ 
-    message: 'Route not found',
-    path: req.originalUrl 
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`
   });
 });
 
-// Global error handler (must be last)
+// Global error handler
 app.use(errorHandler);
 
 // Database connection
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/mern-testing';
+    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/week6-testing';
     await mongoose.connect(mongoURI);
     logger.info('MongoDB connected successfully');
   } catch (error) {
-    logger.error('MongoDB connection error:', error);
+    logger.error('MongoDB connection failed:', error);
     process.exit(1);
   }
 };
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully');
-  await mongoose.connection.close();
-  process.exit(0);
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received. Shutting down gracefully...');
+  mongoose.connection.close(() => {
+    logger.info('MongoDB connection closed.');
+    process.exit(0);
+  });
 });
 
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully');
-  await mongoose.connection.close();
-  process.exit(0);
+process.on('SIGINT', () => {
+  logger.info('SIGINT received. Shutting down gracefully...');
+  mongoose.connection.close(() => {
+    logger.info('MongoDB connection closed.');
+    process.exit(0);
+  });
 });
 
 // Start server
@@ -94,7 +102,7 @@ const startServer = async () => {
   }
   
   const server = app.listen(PORT, () => {
-    logger.info(`Server running on port ${PORT}`);
+    logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
   });
 
   return server;
@@ -105,4 +113,4 @@ if (process.env.NODE_ENV !== 'test') {
   startServer();
 }
 
-module.exports = app;
+module.exports = { app, startServer };
